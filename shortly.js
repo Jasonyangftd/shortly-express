@@ -2,6 +2,7 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
+var session = require('express-session');
 
 
 var db = require('./app/config');
@@ -13,6 +14,7 @@ var Click = require('./app/models/click');
 
 var app = express();
 
+
 app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
 app.use(partials());
@@ -21,27 +23,27 @@ app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
+app.use(session({
+  name: 'shortly',
+  secret: 'whateva'
+}));
 
 
-app.get('/', 
-function(req, res) {
+app.get('/', checkUser, function(req, res) {
   res.render('index');
 });
 
-app.get('/create', 
-function(req, res) {
+app.get('/create', checkUser, function(req, res) {
   res.render('index');
 });
 
-app.get('/links', 
-function(req, res) {
+app.get('/links', checkUser, function(req, res) {
   Links.reset().fetch().then(function(links) {
     res.send(200, links.models);
   });
 });
 
-app.post('/links', 
-function(req, res) {
+app.post('/links', checkUser, function(req, res) {
   var uri = req.body.url;
 
   if (!util.isValidUrl(uri)) {
@@ -78,7 +80,53 @@ function(req, res) {
 // Write your authentication routes here
 /************************************************************/
 
+function checkUser(req, res, next){
+  if(!req.session.userIsAuthenticated){
+    res.redirect('/login');
+  }
+  next();
+}
 
+app.get('/login', function(req, res){
+  res.render('login');
+});
+
+app.post('/login', function(req, res){
+  // log user in
+  var username = req.body.username;
+  var password = req.body.password
+
+  User.login(username, password).then(function(user){
+    if(user){
+      req.session.regenerate(function(){
+        req.session.userIsAuthenticated = true;
+        res.redirect('/');
+      });
+    }
+  });
+
+});
+
+app.post('/signup', function(req, res){
+  // create a new user
+  var user = new User({
+    username: req.body.username,
+    password: req.body.password
+  });
+  user.save().then(function(user){
+    console.log('user created', user);
+  });
+});
+
+app.get('/signup', function(req, res){
+  res.render('signup.ejs');
+});
+
+app.get('/logout', function(req, res){
+  req.session.destroy(function(err) {
+    res.redirect('/login');
+  });
+});
 
 /************************************************************/
 // Handle the wildcard route last - if all other routes fail
