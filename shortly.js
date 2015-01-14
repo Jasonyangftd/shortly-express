@@ -3,7 +3,9 @@ var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
 var session = require('express-session');
-
+var passport = require('passport');
+var GitHubStrategy = require('passport-github').Strategy;
+var cookieParser = require('cookie-parser');
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -14,7 +16,7 @@ var Click = require('./app/models/click');
 
 var app = express();
 
-
+// app.use(express.cookieParser());
 app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
 app.use(partials());
@@ -23,10 +25,67 @@ app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
+
+app.use(cookieParser());
 app.use(session({
-  name: 'shortly',
-  secret: 'whateva'
+  secret: 'fghfg'
 }));
+app.use(passport.initialize());
+app.use(passport.session());
+
+
+passport.serializeUser(function(user, done) {
+  done(null, user);
+});
+
+passport.deserializeUser(function(obj, done) {
+  done(null, obj);
+});
+
+passport.use(new GitHubStrategy({
+    clientID: 'f4e0be50891085ee4375',
+    clientSecret: 'c23a8f2cba717eb55cfa749eb46b9d6c393978ff',
+    callbackURL: "http://127.0.0.1:4568/auth/github/callback"
+  },
+  function(accessToken, refreshToken, profile, done) {
+
+    var user = new User({
+      username: profile.id
+    });
+
+    user.fetch().then(function(data){
+      if(data){
+        console.log(data.attributes);
+        return done(null, data.attributes);
+      } else {
+        user.save().then(function(saved){
+          console.log('user saved', saved);
+          return done(null, saved.attributes);
+        });
+      }
+    });
+
+    // var user = new User({
+    //   username:
+    //   password:
+    // });
+    // done(null)
+  }
+));
+
+app.get('/auth/github',
+  passport.authenticate('github'),
+  function(req, res){
+    // The request will be redirected to GitHub for authentication, so this
+    // function will not be called.
+  });
+
+app.get('/auth/github/callback',
+  passport.authenticate('github', { failureRedirect: '/login' }),
+  function(req, res) {
+    res.redirect('/');
+  });
+
 
 
 app.get('/', checkUser, function(req, res) {
@@ -81,10 +140,11 @@ app.post('/links', checkUser, function(req, res) {
 /************************************************************/
 
 function checkUser(req, res, next){
-  if(!req.session.userIsAuthenticated){
+  if(req.isAuthenticated()){
+    next();
+  } else {
     res.redirect('/login');
   }
-  next();
 }
 
 app.get('/login', function(req, res){
@@ -96,12 +156,15 @@ app.post('/login', function(req, res){
   var username = req.body.username;
   var password = req.body.password
 
-  User.login(username, password).then(function(user){
-    if(user){
+  User.login(username, password, function(err, pass){
+    if(pass){
+      // console.log('pass exists: ', pass);
       req.session.regenerate(function(){
         req.session.userIsAuthenticated = true;
         res.redirect('/');
       });
+    } else {
+      console.log('not in database');
     }
   });
 
@@ -109,13 +172,21 @@ app.post('/login', function(req, res){
 
 app.post('/signup', function(req, res){
   // create a new user
+
   var user = new User({
     username: req.body.username,
     password: req.body.password
   });
-  user.save().then(function(user){
-    console.log('user created', user);
-  });
+
+  user.encryptPassword(user, function(err, hash) {
+    // Store hash in your password DB.
+    user.set('password', hash);
+    user.save().then(function(user){
+      console.log('user created', user);
+    });
+  })
+
+
 });
 
 app.get('/signup', function(req, res){
@@ -123,9 +194,11 @@ app.get('/signup', function(req, res){
 });
 
 app.get('/logout', function(req, res){
-  req.session.destroy(function(err) {
-    res.redirect('/login');
-  });
+  // req.session.destroy(function(err) {
+  //   res.redirect('/login');
+  // });
+  req.logout();
+  res.redirect('/');
 });
 
 /************************************************************/

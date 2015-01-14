@@ -1,6 +1,6 @@
 var db = require('../config');
 var Promise = require('bluebird');
-var bcrypt   = Promise.promisifyAll(require('bcrypt'));
+var bcrypt   = require('bcrypt');
 
 var User = db.Model.extend({
   tableName: 'users',
@@ -13,21 +13,25 @@ var User = db.Model.extend({
     //   // model.set('code', shasum.digest('hex').slice(0, 5));
 
     // });
+    //this.on('creating', this.encryptPassword, this);
   },
 
-  encryptPassword: function(user){
-    console.log(user);
+  encryptPassword: function(user, callback){
+
+    bcrypt.genSalt(10, function(err, salt) {
+      bcrypt.hash(user.get('password'), salt, callback);
+    });
   }
 
 }, {
-  login: Promise.method(function(username, password) {
+  login: function(username, password, callback) {
     if (!username || !password) throw new Error('username and password are both required');
-    return new this({username: username.trim()}).fetch({require: true}).tap(function(user) {
-      console.log('user found: ', user);
-      return user.get('password') === password;
-      // return bcrypt.compareAsync(user.get('password'), password);
+
+    new this({ username: username.trim() }).fetch({ require: true }).tap(function(user){
+      bcrypt.compare(password, user.get('password'), callback);
     });
-  })
+
+  }
 
   // login: function(username, password){
   //   return new Promise(function(resolve, reject){
